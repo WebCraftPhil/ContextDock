@@ -182,189 +182,310 @@ async function init() {
 
 let promptPickerController = null;
 
-function createPromptOverlay() {
-  injectOverlayStyles();
+export async function renderPromptPickerOverlay(options = {}) {
+  if (promptPickerController) {
+    promptPickerController.update(options);
+    return promptPickerController;
+  }
 
-  const container = document.createElement("div");
-  container.className = "contextdock-prompt-overlay";
-  container.setAttribute("role", "dialog");
-  container.setAttribute("aria-label", "ContextDock prompt picker");
+  promptPickerController = await createPromptPickerOverlay(options);
+  return promptPickerController;
+}
 
-  const searchInput = document.createElement("input");
-  searchInput.type = "text";
-  searchInput.placeholder = "Search prompts";
-  searchInput.className = "contextdock-prompt-overlay__input";
-  searchInput.setAttribute("aria-label", "Search saved prompts");
+async function openPromptOverlay(payload = {}) {
+  const prompts = Array.isArray(payload.prompts) ? payload.prompts : await loadStoredPrompts();
 
-  const list = document.createElement("ul");
-  list.className = "contextdock-prompt-overlay__list";
-
-  container.append(searchInput, list);
-  document.body.appendChild(container);
-
-  searchInput.addEventListener("input", () => {
-    const query = searchInput.value.trim();
-    filteredPrompts = promptsCache.filter((prompt) => fuzzyMatches(query, prompt));
-    highlightedIndex = filteredPrompts.length ? 0 : -1;
-    renderPromptOverlay();
+  const controller = await renderPromptPickerOverlay({
+    prompts,
+    lastUsedId: payload.lastUsedId,
+    onSelect(promptId) {
+      submitPromptSelection(promptId);
+    },
+    onClose() {
+      promptPickerController = null;
+    },
   });
 
-  searchInput.addEventListener("keydown", handleOverlayKeyNavigation);
+  controller.open();
+}
 
-  const handleDocumentKeyDown = (event) => {
-    if (!promptOverlay || !promptOverlay.container.classList.contains("contextdock-prompt-overlay--visible")) {
+async function createPromptPickerOverlay(initialOptions = {}) {
+  await ensureTailwindReady();
+
+  const config = {
+    onSelect: typeof initialOptions.onSelect === "function" ? initialOptions.onSelect : () => {},
+    onClose: typeof initialOptions.onClose === "function" ? initialOptions.onClose : () => {},
+  };
+
+  const state = {
+    prompts: [],
+    filtered: [],
+    query: "",
+    activeIndex: -1,
+    lastUsedId: initialOptions.lastUsedId ?? null,
+  };
+
+  const root = document.createElement("div");
+  root.className = "contextdock-picker fixed inset-0 z-[2147483646] hidden flex items-end justify-end p-4 md:items-center md:justify-center";
+  root.dataset.contextdockPromptPicker = "true";
+
+  const scrim = document.createElement("div");
+  scrim.className = "absolute inset-0 bg-slate-950/50 backdrop-blur-sm";
+
+  const cardShell = document.createElement("div");
+  cardShell.className = "relative z-10 w-full max-w-md pointer-events-auto md:max-w-lg";
+
+  const card = document.createElement("div");
+  card.className = "rounded-3xl border border-white/10 bg-slate-900/80 p-5 text-slate-100 shadow-2xl shadow-slate-950/40 backdrop-blur-xl";
+
+  const header = document.createElement("div");
+  header.className = "flex items-center justify-between gap-2 text-xs uppercase tracking-[0.2em] text-slate-400";
+  header.textContent = "Prompt Library";
+
+  const inputWrapper = document.createElement("div");
+  inputWrapper.className = "relative mt-3";
+
+  const inputIcon = document.createElement("span");
+  inputIcon.className = "pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400";
+  inputIcon.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.5 3.5a5 5 0 013.975 8.025l3 3a.75.75 0 11-1.06 1.06l-3-3A5 5 0 118.5 3.5zm0 1.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" clip-rule="evenodd"></path></svg>';
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.placeholder = "Search saved prompts";
+  searchInput.className = "w-full rounded-2xl border border-white/10 bg-white/10 px-9 py-3 text-sm text-slate-100 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/50";
+
+  inputWrapper.append(inputIcon, searchInput);
+
+  const list = document.createElement("ul");
+  list.className = "mt-4 max-h-72 space-y-2 overflow-y-auto pr-1";
+
+  const helpText = document.createElement("p");
+  helpText.className = "mt-3 text-xs text-slate-400";
+  helpText.textContent = "Use ↑ ↓ to navigate, Enter to inject, Esc to close";
+
+  card.append(header, inputWrapper, list, helpText);
+  cardShell.appendChild(card);
+  root.append(scrim, cardShell);
+  document.body.appendChild(root);
+
+  function updateOptions(options = {}) {
+    if (typeof options.onSelect === "function") {
+      config.onSelect = options.onSelect;
+    }
+    if (typeof options.onClose === "function") {
+      config.onClose = options.onClose;
+    }
+    if (options.lastUsedId !== undefined) {
+      state.lastUsedId = options.lastUsedId || null;
+    }
+    if (Array.isArray(options.prompts)) {
+      state.prompts = normalizePrompts(options.prompts);
+      if (!state.query) {
+        state.query = "";
+      }
+      applyFilter();
+    }
+  }
+
+  function open() {
+    root.classList.remove("hidden");
+    root.classList.add("flex");
+    searchInput.value = state.query;
+    applyFilter();
+    requestAnimationFrame(() => {
+      searchInput.focus({ preventScroll: true });
+      searchInput.select();
+    });
+  }
+
+  function close() {
+    if (root.classList.contains("hidden")) {
+      return;
+    }
+    root.classList.add("hidden");
+    root.classList.remove("flex");
+    config.onClose();
+  }
+
+  function destroy() {
+    cleanup();
+    root.remove();
+  }
+
+  function cleanup() {
+    document.removeEventListener("keydown", handleGlobalKeyDown, true);
+  }
+
+  function applyFilter() {
+    const query = state.query.trim().toLowerCase();
+    if (!state.prompts.length) {
+      state.filtered = [];
+      state.activeIndex = -1;
+    } else if (!query) {
+      state.filtered = [...state.prompts];
+      state.activeIndex = Math.min(
+        state.lastUsedId ? state.filtered.findIndex((prompt) => prompt.id === state.lastUsedId) : 0,
+        Math.max(state.filtered.length - 1, 0)
+      );
+    } else {
+      const terms = query.split(/\s+/).filter(Boolean);
+      state.filtered = state.prompts.filter((prompt) =>
+        terms.every((term) =>
+          prompt.title.toLowerCase().includes(term) || prompt.content.toLowerCase().includes(term)
+        )
+      );
+      state.activeIndex = state.filtered.length ? 0 : -1;
+    }
+
+    if (state.filtered.length && state.activeIndex < 0) {
+      state.activeIndex = 0;
+    }
+
+    renderList();
+  }
+
+  function renderList() {
+    list.innerHTML = "";
+
+    if (!state.prompts.length) {
+      const empty = document.createElement("li");
+      empty.className = "rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-slate-400";
+      empty.textContent = "You haven't saved any prompts yet.";
+      list.appendChild(empty);
+      return;
+    }
+
+    if (!state.filtered.length) {
+      const empty = document.createElement("li");
+      empty.className = "rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-slate-400";
+      empty.textContent = "No prompts match your search.";
+      list.appendChild(empty);
+      return;
+    }
+
+    state.filtered.forEach((prompt, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.promptId = prompt.id;
+      button.className = "w-full rounded-2xl border border-transparent bg-white/5 px-4 py-3 text-left transition duration-150 hover:border-indigo-400/40 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60";
+
+      if (index === state.activeIndex) {
+        button.classList.add("border-indigo-400/60", "bg-indigo-500/10", "shadow", "shadow-indigo-900/30");
+      }
+
+      const titleLine = document.createElement("div");
+      titleLine.className = "flex items-center justify-between gap-2 text-sm font-semibold text-slate-100";
+      titleLine.appendChild(highlightTextContent(prompt.title, state.query));
+
+      const previewLine = document.createElement("div");
+      previewLine.className = "mt-1 text-xs leading-relaxed text-slate-300";
+      previewLine.appendChild(highlightTextContent(createSnippet(prompt.content), state.query));
+
+      button.append(titleLine, previewLine);
+
+      button.addEventListener("mouseenter", () => {
+        state.activeIndex = index;
+        renderList();
+      });
+
+      button.addEventListener("click", () => {
+        selectPrompt(index);
+      });
+
+      list.appendChild(button);
+    });
+
+    ensureActiveVisible();
+  }
+
+  function ensureActiveVisible() {
+    if (state.activeIndex < 0) {
+      return;
+    }
+    const activeButton = list.querySelectorAll("button")[state.activeIndex];
+    if (activeButton) {
+      activeButton.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function moveActive(step) {
+    if (!state.filtered.length) {
+      return;
+    }
+    const total = state.filtered.length;
+    state.activeIndex = (state.activeIndex + step + total) % total;
+    renderList();
+  }
+
+  function selectPrompt(index) {
+    const prompt = state.filtered[index];
+    if (!prompt) {
+      return;
+    }
+    close();
+    config.onSelect(prompt.id);
+  }
+
+  function handleGlobalKeyDown(event) {
+    if (root.classList.contains("hidden")) {
       return;
     }
 
     if (event.key === "Escape") {
       event.preventDefault();
-      hidePromptOverlay();
-    }
-  };
-
-  const handleDocumentPointerDown = (event) => {
-    if (!promptOverlay || !promptOverlay.container.classList.contains("contextdock-prompt-overlay--visible")) {
+      close();
       return;
     }
 
-    if (!promptOverlay.container.contains(event.target)) {
-      hidePromptOverlay();
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveActive(1);
+      return;
     }
-  };
 
-  document.addEventListener("keydown", handleDocumentKeyDown);
-  document.addEventListener("pointerdown", handleDocumentPointerDown, { capture: true });
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveActive(-1);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      if (document.activeElement === searchInput || root.contains(document.activeElement)) {
+        event.preventDefault();
+        selectPrompt(state.activeIndex);
+      }
+    }
+  }
+
+  function handleInput(event) {
+    state.query = event.target.value;
+    applyFilter();
+  }
+
+  function handleScrimClick(event) {
+    if (event.target === scrim) {
+      close();
+    }
+  }
+
+  scrim.addEventListener("click", handleScrimClick);
+  searchInput.addEventListener("input", handleInput);
+  document.addEventListener("keydown", handleGlobalKeyDown, true);
+
+  updateOptions(initialOptions);
 
   return {
-    container,
-    searchInput,
-    list,
+    open,
+    close,
+    update: updateOptions,
+    destroy,
   };
-}
-
-function showPromptOverlay() {
-  if (!promptOverlay) {
-    return;
-  }
-
-  promptOverlay.container.classList.add("contextdock-prompt-overlay--visible");
-  promptOverlay.searchInput.value = "";
-  promptOverlay.searchInput.focus({ preventScroll: true });
-}
-
-function hidePromptOverlay() {
-  if (!promptOverlay) {
-    return;
-  }
-
-  promptOverlay.container.classList.remove("contextdock-prompt-overlay--visible");
-  highlightedIndex = -1;
-}
-
-function handleOverlayKeyNavigation(event) {
-  if (!filteredPrompts.length) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-    }
-    return;
-  }
-
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    highlightedIndex = (highlightedIndex + 1) % filteredPrompts.length;
-    renderPromptOverlay();
-    return;
-  }
-
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    highlightedIndex = (highlightedIndex - 1 + filteredPrompts.length) % filteredPrompts.length;
-    renderPromptOverlay();
-    return;
-  }
-
-  if (event.key === "Enter") {
-    event.preventDefault();
-    const selected = filteredPrompts[highlightedIndex];
-    if (selected) {
-      submitPromptSelection(selected.id);
-    }
-  }
-}
-
-function fuzzyMatches(query, prompt) {
-  if (!query) {
-    return true;
-  }
-
-  const haystack = `${prompt.title}\n${typeof prompt.content === "string" ? prompt.content : ""}`.toLowerCase();
-  let searchIndex = 0;
-
-  for (const char of query.toLowerCase()) {
-    searchIndex = haystack.indexOf(char, searchIndex);
-    if (searchIndex === -1) {
-      return false;
-    }
-    searchIndex += 1;
-  }
-
-  return true;
-}
-
-function renderPromptOverlay() {
-  if (!promptOverlay) {
-    return;
-  }
-
-  promptOverlay.list.innerHTML = "";
-
-  if (!filteredPrompts.length) {
-    const emptyItem = document.createElement("li");
-    emptyItem.className = "contextdock-prompt-overlay__item contextdock-prompt-overlay__item--empty";
-    emptyItem.textContent = "No prompts found";
-    promptOverlay.list.appendChild(emptyItem);
-    return;
-  }
-
-  filteredPrompts.forEach((prompt, index) => {
-    const item = document.createElement("li");
-    item.className = "contextdock-prompt-overlay__item";
-    if (index === highlightedIndex) {
-      item.classList.add("contextdock-prompt-overlay__item--active");
-    }
-
-    const title = document.createElement("div");
-    title.className = "contextdock-prompt-overlay__title";
-    title.textContent = prompt.title;
-
-    const preview = document.createElement("div");
-    preview.className = "contextdock-prompt-overlay__preview";
-    preview.textContent = (typeof prompt.content === "string" ? prompt.content : "").replace(/\s+/g, " ").slice(0, 160);
-
-    item.append(title, preview);
-
-    item.addEventListener("mouseenter", () => {
-      highlightedIndex = index;
-      renderPromptOverlay();
-    });
-
-    item.addEventListener("click", () => submitPromptSelection(prompt.id));
-
-    promptOverlay.list.appendChild(item);
-  });
-
-  const activeItem = promptOverlay.list.querySelector(".contextdock-prompt-overlay__item--active");
-  if (activeItem) {
-    activeItem.scrollIntoView({ block: "nearest" });
-  }
 }
 
 function submitPromptSelection(promptId) {
   if (!promptId) {
     return;
   }
-
-  hidePromptOverlay();
 
   chrome.runtime.sendMessage(
     {
@@ -381,6 +502,10 @@ function submitPromptSelection(promptId) {
 
       if (response && response.ok === false) {
         console.error("ContextDock: background rejected prompt selection", response.error);
+      }
+      const controller = promptPickerController;
+      if (controller) {
+        controller.close();
       }
     }
   );
