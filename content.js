@@ -60,6 +60,29 @@ let currentHostConfig = null;
 let domObserver = null;
 let saveModalElements = null;
 
+async function handleOpenSaveModal(payload) {
+  const selectionText = (payload?.selectionText || SMART_VARIABLES.selectedText()).trim();
+  const suggestedTitle = (payload?.suggestedTitle || selectionText.split(/\s+/).slice(0, 6).join(" ")).trim();
+  const sourceUrl = payload?.sourceUrl || SMART_VARIABLES.currentURL();
+
+  if (!selectionText) {
+    console.info("ContextDock: Ignoring save modal request with empty selection");
+    return;
+  }
+
+  if (!saveModalElements) {
+    saveModalElements = createSaveModalElements();
+  }
+
+  populateSaveModal(saveModalElements, {
+    selectionText,
+    suggestedTitle,
+    sourceUrl,
+  });
+
+  openSaveModal(saveModalElements);
+}
+
 async function handleInjectMessage(payload) {
   if (!currentHostConfig) {
     currentHostConfig = resolveHostConfig();
@@ -270,5 +293,429 @@ function observeDomForInput() {
   if (document.body) {
     domObserver.observe(document.body, { childList: true, subtree: true });
   }
+}
+
+function createSaveModalElements() {
+  const overlay = document.createElement("div");
+  overlay.className = "contextdock-overlay";
+
+  const modal = document.createElement("div");
+  modal.className = "contextdock-modal";
+
+  const title = document.createElement("h2");
+  title.textContent = "Add to ContextDock";
+  title.className = "contextdock-modal__title";
+
+  const form = document.createElement("form");
+  form.className = "contextdock-modal__form";
+  form.autocomplete = "off";
+
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "Title";
+  nameLabel.className = "contextdock-modal__label";
+
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.name = "title";
+  nameInput.required = true;
+  nameInput.placeholder = "e.g. Friendly follow-up";
+  nameInput.className = "contextdock-modal__input";
+
+  const tagsLabel = document.createElement("label");
+  tagsLabel.textContent = "Tags (comma separated)";
+  tagsLabel.className = "contextdock-modal__label";
+
+  const tagsInput = document.createElement("input");
+  tagsInput.type = "text";
+  tagsInput.name = "tags";
+  tagsInput.placeholder = "sales, troubleshooting";
+  tagsInput.className = "contextdock-modal__input";
+
+  const snippetLabel = document.createElement("label");
+  snippetLabel.textContent = "Snippet";
+  snippetLabel.className = "contextdock-modal__label";
+
+  const snippetArea = document.createElement("textarea");
+  snippetArea.name = "snippet";
+  snippetArea.required = true;
+  snippetArea.rows = 6;
+  snippetArea.className = "contextdock-modal__textarea";
+
+  const sourceLabel = document.createElement("label");
+  sourceLabel.textContent = "Source URL";
+  sourceLabel.className = "contextdock-modal__label";
+
+  const sourceInput = document.createElement("input");
+  sourceInput.type = "url";
+  sourceInput.name = "source";
+  sourceInput.placeholder = "https://...";
+  sourceInput.className = "contextdock-modal__input";
+
+  const errorText = document.createElement("div");
+  errorText.className = "contextdock-modal__error";
+
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "contextdock-modal__actions";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.className = "contextdock-modal__button contextdock-modal__button--secondary";
+
+  const saveButton = document.createElement("button");
+  saveButton.type = "submit";
+  saveButton.textContent = "Save";
+  saveButton.className = "contextdock-modal__button contextdock-modal__button--primary";
+
+  actionsRow.append(cancelButton, saveButton);
+  form.append(
+    nameLabel,
+    nameInput,
+    tagsLabel,
+    tagsInput,
+    snippetLabel,
+    snippetArea,
+    sourceLabel,
+    sourceInput,
+    errorText,
+    actionsRow
+  );
+
+  modal.append(title, form);
+  overlay.append(modal);
+
+  cancelButton.addEventListener("click", () => closeSaveModal({ overlay }));
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      closeSaveModal({ overlay });
+    }
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    handleSaveModalSubmit({
+      form,
+      nameInput,
+      tagsInput,
+      snippetArea,
+      sourceInput,
+      errorText,
+      overlay,
+    });
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (!overlay.isConnected) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      closeSaveModal({ overlay });
+    }
+  });
+
+  injectSaveModalStyles();
+
+  return {
+    overlay,
+    modal,
+    form,
+    nameInput,
+    tagsInput,
+    snippetArea,
+    sourceInput,
+    errorText,
+  };
+}
+
+function populateSaveModal(elements, { selectionText, suggestedTitle, sourceUrl }) {
+  const { overlay, nameInput, tagsInput, snippetArea, sourceInput, errorText } = elements;
+
+  if (!overlay.isConnected) {
+    document.body.appendChild(overlay);
+  }
+
+  nameInput.value = suggestedTitle || "";
+  tagsInput.value = "";
+  snippetArea.value = selectionText;
+  sourceInput.value = sourceUrl || "";
+  errorText.textContent = "";
+
+  nameInput.focus();
+  nameInput.select();
+}
+
+function openSaveModal(elements) {
+  elements.overlay.classList.add("contextdock-overlay--visible");
+}
+
+function closeSaveModal({ overlay }) {
+  overlay.classList.remove("contextdock-overlay--visible");
+  setTimeout(() => {
+    if (overlay.parentElement) {
+      overlay.parentElement.removeChild(overlay);
+    }
+  }, 200);
+}
+
+async function handleSaveModalSubmit({
+  form,
+  nameInput,
+  tagsInput,
+  snippetArea,
+  sourceInput,
+  errorText,
+  overlay,
+}) {
+  const title = nameInput.value.trim();
+  const snippet = snippetArea.value.trim();
+  const sourceUrl = sourceInput.value.trim();
+  const tags = tagsInput.value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+  if (!title) {
+    errorText.textContent = "Title is required.";
+    nameInput.focus();
+    return;
+  }
+
+  if (!snippet) {
+    errorText.textContent = "Snippet is required.";
+    snippetArea.focus();
+    return;
+  }
+
+  form.classList.add("contextdock-modal__form--saving");
+  errorText.textContent = "";
+
+  try {
+    const prompt = {
+      id: generatePromptId(),
+      title,
+      tags,
+      content: snippet,
+      createdAt: new Date().toISOString(),
+      sourceUrl,
+      host: window.location.hostname,
+    };
+
+    await persistPrompt(prompt);
+    closeSaveModal({ overlay });
+  } catch (error) {
+    console.error("ContextDock: failed to save prompt", error);
+    errorText.textContent = "Failed to save prompt. Please try again.";
+  } finally {
+    form.classList.remove("contextdock-modal__form--saving");
+  }
+}
+
+async function persistPrompt(prompt) {
+  const prompts = await loadSavedPrompts();
+  prompts.push(prompt);
+  await setSavedPrompts(prompts);
+}
+
+function loadSavedPrompts() {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get({ savedPrompts: [] }, (items) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(Array.isArray(items.savedPrompts) ? items.savedPrompts : []);
+    });
+  });
+}
+
+function setSavedPrompts(prompts) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set({ savedPrompts: prompts }, () => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+function generatePromptId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `prompt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function injectSaveModalStyles() {
+  if (document.getElementById("contextdock-modal-styles")) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = "contextdock-modal-styles";
+  style.textContent = `
+    .contextdock-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(15, 23, 42, 0.45);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      z-index: 2147483646;
+    }
+
+    .contextdock-overlay--visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .contextdock-modal {
+      width: min(480px, 92vw);
+      max-height: 80vh;
+      overflow-y: auto;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.24);
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #0f172a;
+    }
+
+    .contextdock-modal__title {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .contextdock-modal__form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .contextdock-modal__form--saving {
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    .contextdock-modal__label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #334155;
+    }
+
+    .contextdock-modal__input,
+    .contextdock-modal__textarea {
+      width: 100%;
+      font-size: 14px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #cbd5f5;
+      color: #0f172a;
+      background: #f8fafc;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .contextdock-modal__input:focus,
+    .contextdock-modal__textarea:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+      background: #ffffff;
+    }
+
+    .contextdock-modal__textarea {
+      resize: vertical;
+      min-height: 132px;
+    }
+
+    .contextdock-modal__error {
+      min-height: 18px;
+      font-size: 13px;
+      color: #dc2626;
+    }
+
+    .contextdock-modal__actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .contextdock-modal__button {
+      min-width: 96px;
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 20px;
+      border: none;
+      padding: 9px 18px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .contextdock-modal__button--primary {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white;
+      box-shadow: 0 10px 20px rgba(79, 70, 229, 0.24);
+    }
+
+    .contextdock-modal__button--primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px rgba(79, 70, 229, 0.28);
+    }
+
+    .contextdock-modal__button--secondary {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+
+    .contextdock-modal__button--secondary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 16px rgba(148, 163, 184, 0.24);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .contextdock-modal {
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+
+      .contextdock-modal__label {
+        color: #cbd5f5;
+      }
+
+      .contextdock-modal__input,
+      .contextdock-modal__textarea {
+        background: #1e293b;
+        border-color: #334155;
+        color: #e2e8f0;
+      }
+
+      .contextdock-modal__input:focus,
+      .contextdock-modal__textarea:focus {
+        background: #0f172a;
+        border-color: #818cf8;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.38);
+      }
+
+      .contextdock-modal__button--secondary {
+        background: #1f2937;
+        color: #f8fafc;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
 }
 

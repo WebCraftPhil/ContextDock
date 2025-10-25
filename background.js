@@ -1,3 +1,59 @@
+const CONTEXT_MENU_ID = "contextdock-add-selection";
+
+chrome.runtime.onInstalled.addListener(() => {
+  setupContextMenus();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  setupContextMenus();
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab || typeof tab.id !== "number") {
+    return;
+  }
+
+  if (info.menuItemId !== CONTEXT_MENU_ID) {
+    return;
+  }
+
+  const selectionText = (info.selectionText || "").trim();
+
+  if (!selectionText) {
+    return;
+  }
+
+  chrome.tabs.sendMessage(
+    tab.id,
+    {
+      type: "contextDock.openSaveModal",
+      payload: {
+        selectionText,
+        sourceUrl: info.pageUrl || tab.url || "",
+        suggestedTitle: selectionText.split(/\s+/).slice(0, 6).join(" "),
+      },
+    },
+    () => void chrome.runtime.lastError
+  );
+});
+
+async function setupContextMenus() {
+  try {
+    await chrome.contextMenus.removeAll();
+  } catch (error) {
+    console.warn("ContextDock: failed to remove existing context menus", error);
+  }
+
+  try {
+    await chrome.contextMenus.create({
+      id: CONTEXT_MENU_ID,
+      title: "Add to ContextDock",
+      contexts: ["selection"],
+    });
+  } catch (error) {
+    console.error("ContextDock: failed to register context menu", error);
+  }
+}
 import { getPrompts } from './src/storage/prompts.js';
 
 const LAST_USED_PROMPT_KEY = 'contextDock.lastUsedPromptId';

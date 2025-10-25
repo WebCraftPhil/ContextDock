@@ -162,3 +162,43 @@ export const __testing = {
   writePromptsToStorage,
 };
 
+export async function exportPrompts() {
+  const prompts = await readPromptsFromStorage();
+  return JSON.stringify(prompts, null, 2);
+}
+
+export async function importPrompts(rawPrompts) {
+  if (!Array.isArray(rawPrompts)) {
+    throw new TypeError('Imported prompts must be an array.');
+  }
+
+  const existingPrompts = await readPromptsFromStorage();
+  const existingIds = new Set(existingPrompts.map((prompt) => prompt.id));
+
+  const normalized = rawPrompts.map((prompt) => {
+    const normalizedPrompt = normalizePrompt(prompt);
+    validatePrompt(normalizedPrompt);
+    return normalizedPrompt;
+  });
+
+  const nextIds = new Set();
+  const deduped = [];
+
+  for (const prompt of normalized) {
+    if (existingIds.has(prompt.id) || nextIds.has(prompt.id)) {
+      continue;
+    }
+
+    nextIds.add(prompt.id);
+    deduped.push(prompt);
+  }
+
+  if (!deduped.length) {
+    return existingPrompts;
+  }
+
+  const nextPrompts = [...existingPrompts, ...deduped];
+  await writePromptsToStorage(nextPrompts);
+  return nextPrompts;
+}
+
