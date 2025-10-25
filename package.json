@@ -1,0 +1,27 @@
+{
+  "name": "contextdock",
+  "version": "0.1.0",
+  "description": "Save reusable prompts and inject them into ChatGPT-like interfaces.",
+  "main": "background.js",
+  "scripts": {
+    "build": "tailwindcss -i ./src/css/styles.css -o ./dist/styles.css --watch",
+    "build:prod": "tailwindcss -i ./src/css/styles.css -o ./dist/styles.css --minify",
+    "dev": "npm run build",
+    "lint": "echo 'Linting not configured yet'",
+    "test": "echo 'Testing not configured yet'"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0",
+    "@tailwindcss/forms": "^0.5.7",
+    "@tailwindcss/typography": "^0.5.10"
+  },
+  "keywords": [
+    "chrome-extension",
+    "ai",
+    "chatgpt",
+    "prompts",
+    "productivity"
+  ],
+  "author": "Phil",
+  "license": "MIT"
+}

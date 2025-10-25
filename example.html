@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ContextDock UI Example</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dist/styles.css">
+</head>
+<body class="contextdock-extension-popup">
+  <div class="p-6 space-y-6">
+    <!-- Header -->
+    <div class="contextdock-flex-between">
+      <h1 class="text-xl font-semibold">ContextDock</h1>
+      <button class="contextdock-button contextdock-button--primary">
+        New Prompt
+      </button>
+    </div>
+
+    <!-- Prompt List -->
+    <div class="contextdock-card">
+      <h2 class="text-lg font-semibold mb-4">My Prompts</h2>
+
+      <div class="space-y-2">
+        <div class="contextdock-list-item contextdock-list-item--active">
+          <div class="contextdock-list-item__content">
+            <div class="contextdock-list-item__title">Friendly customer response</div>
+            <div class="contextdock-list-item__subtitle">Used 5 times • Last: 2 days ago</div>
+          </div>
+          <div class="contextdock-list-item__actions">
+            <button class="contextdock-button contextdock-button--ghost contextdock-button--small">Edit</button>
+            <button class="contextdock-button contextdock-button--ghost contextdock-button--small">Delete</button>
+          </div>
+        </div>
+
+        <div class="contextdock-list-item">
+          <div class="contextdock-list-item__content">
+            <div class="contextdock-list-item__title">Technical explanation</div>
+            <div class="contextdock-list-item__subtitle">Used 12 times • Last: yesterday</div>
+          </div>
+          <div class="contextdock-list-item__actions">
+            <button class="contextdock-button contextdock-button--ghost contextdock-button--small">Edit</button>
+            <button class="contextdock-button contextdock-button--ghost contextdock-button--small">Delete</button>
+          </div>
+        </div>
+
+        <div class="contextdock-list-item">
+          <div class="contextdock-list-item__content">
+            <div class="contextdock-list-item__title">Creative writing prompt</div>
+            <div class="contextdock-list-item__subtitle">Used 3 times • Last: 1 week ago</div>
+          </div>
+          <div class="contextdock-list-item__actions">
+            <button class="contextdock-button contextdock-button--ghost contextdock-button--small">Edit</button>
+            <button class="contextdock-button contextdock-button--ghost contextdock-button--small">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tags Section -->
+    <div class="contextdock-card">
+      <h3 class="text-base font-semibold mb-3">Tags</h3>
+      <div class="flex flex-wrap gap-2">
+        <span class="contextdock-tag contextdock-tag--primary">customer-service</span>
+        <span class="contextdock-tag">technical</span>
+        <span class="contextdock-tag">creative</span>
+        <span class="contextdock-tag">sales</span>
+        <span class="contextdock-tag">support</span>
+      </div>
+    </div>
+
+    <!-- Form Example -->
+    <div class="contextdock-card">
+      <h3 class="text-base font-semibold mb-4">Create New Prompt</h3>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-2">Title</label>
+          <input type="text" class="contextdock-input" placeholder="e.g., Friendly follow-up">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-2">Tags (comma separated)</label>
+          <input type="text" class="contextdock-input" placeholder="sales, customer-service">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-2">Content</label>
+          <textarea class="contextdock-textarea" rows="4" placeholder="Paste your prompt content here..."></textarea>
+        </div>
+
+        <div class="contextdock-flex-between">
+          <button class="contextdock-button contextdock-button--secondary">Cancel</button>
+          <button class="contextdock-button contextdock-button--primary">Save Prompt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dark Mode Toggle (for demonstration) -->
+  <div class="fixed bottom-4 right-4">
+    <button
+      id="theme-toggle"
+      class="contextdock-button contextdock-button--secondary contextdock-button--small"
+      onclick="toggleTheme()"
+    >
+      Toggle Dark Mode
+    </button>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('dark');
+      const button = document.getElementById('theme-toggle');
+      button.textContent = document.body.classList.contains('dark')
+        ? 'Light Mode'
+        : 'Dark Mode';
+    }
+  </script>
+</body>
+</html>

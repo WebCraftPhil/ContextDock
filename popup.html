@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ContextDock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dist/styles.css">
+</head>
+<body class="contextdock-extension-popup">
+  <div id="app" class="p-6">
+    <!-- Header -->
+    <div class="contextdock-flex-between mb-6">
+      <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">ContextDock</h1>
+      <button id="new-prompt-btn" class="contextdock-button contextdock-button--primary">
+        New Prompt
+      </button>
+    </div>
+
+    <!-- Search -->
+    <div class="mb-4">
+      <input
+        type="text"
+        id="search-input"
+        class="contextdock-input"
+        placeholder="Search prompts..."
+      >
+    </div>
+
+    <!-- Prompts List -->
+    <div id="prompts-list" class="contextdock-space-y">
+      <!-- Prompts will be dynamically loaded here -->
+      <div class="contextdock-card p-8 text-center text-slate-500 dark:text-slate-400">
+        <p>Loading prompts...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Prompt Modal -->
+  <div id="create-modal" class="contextdock-overlay" style="display: none;">
+    <div class="contextdock-modal">
+      <div class="contextdock-modal__header">
+        <h2 class="contextdock-modal__title">Create New Prompt</h2>
+        <p class="contextdock-modal__subtitle">Save a reusable prompt for quick access</p>
+      </div>
+
+      <form id="create-form" class="contextdock-modal__content contextdock-space-y">
+        <div>
+          <label class="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Title *</label>
+          <input
+            type="text"
+            id="prompt-title"
+            name="title"
+            required
+            class="contextdock-input"
+            placeholder="e.g., Friendly customer response"
+          >
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">A descriptive name for your prompt</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Tags</label>
+          <input
+            type="text"
+            id="prompt-tags"
+            name="tags"
+            class="contextdock-input"
+            placeholder="sales, customer-service, technical"
+          >
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Comma-separated tags for organization</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Content *</label>
+          <textarea
+            id="prompt-content"
+            name="content"
+            required
+            rows="6"
+            class="contextdock-textarea"
+            placeholder="Paste your prompt content here... You can use smart variables like {currentURL}, {currentDate}, or {selectedText}"
+          ></textarea>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Support for smart variables: <code class="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs">{currentURL}</code>,
+            <code class="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs">{currentDate}</code>,
+            <code class="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs">{selectedText}</code>
+          </p>
+        </div>
+
+        <div id="form-error" class="text-sm text-red-600 dark:text-red-400" style="display: none;">
+          <!-- Error messages will be shown here -->
+        </div>
+      </form>
+
+      <div class="contextdock-modal__footer">
+        <button
+          type="button"
+          id="cancel-btn"
+          class="contextdock-button contextdock-button--secondary"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="create-form"
+          id="save-btn"
+          class="contextdock-button contextdock-button--primary"
+        >
+          Save Prompt
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -79,11 +79,40 @@ An official release is planned after the MVP stabilizes. Track progress in `WORK
 
 ## 5. Usage
 
+### Managing prompts
+
+Click the ContextDock extension icon to open the popup interface:
+
+- **View prompts**: Browse all saved prompts with search functionality
+- **Create prompts**: Click "New Prompt" to open the creation modal
+- **Edit prompts**: Click the edit button (✏️) on any prompt card
+- **Delete prompts**: Click the delete button (🗑️) and confirm deletion
+
+### Creating prompts
+
+The modal includes:
+
+- **Title** (required): A descriptive name for your prompt
+- **Tags** (optional): Comma-separated tags for organization
+- **Content** (required): The actual prompt text
+
+**Smart variables** supported in content:
+- `{currentURL}` - Active tab URL
+- `{currentDate}` - User's locale date
+- `{selectedText}` - Current text selection
+
 ### Saving prompts
 
-- Highlight text on any webpage, right-click, and choose **Add to ContextDock**.
-- Fill in the title, tags, and content snippet in the modal that appears.
-- Prompts are stored locally under `chrome.storage.local` (`contextDock.prompts`).
+Prompts are stored locally with this schema:
+```javascript
+{
+  id: "uuid-string",
+  title: "string",
+  content: "string",
+  tags: ["array", "of", "strings"],
+  createdAt: "ISO-date-string"
+}
+```
 
 ### Injecting prompts
 
@@ -92,17 +121,10 @@ An official release is planned after the MVP stabilizes. Track progress in `WORK
 - Search or navigate with arrow keys, hit Enter, and ContextDock injects the prompt into the main input.
 - The selected prompt is remembered and re-applied when revisiting the host.
 
-### Smart variables
+### Context menu capture
 
-Include any of the following tokens in your prompt content:
-
-| Token | Description |
-| --- | --- |
-| `{currentURL}` | Replaced with the active tab URL. |
-| `{currentDate}` | Replaced with the user's locale date string. |
-| `{selectedText}` | Replaced with the current text selection in the page. |
-
-If a variable cannot be resolved, it remains unchanged so you can see the token and adjust manually.
+- Highlight text on any webpage, right-click, and choose **Add to ContextDock**.
+- This opens a modal to save the selected text as a new prompt.
 
 ### Importing and exporting
 
@@ -113,10 +135,11 @@ If a variable cannot be resolved, it remains unchanged so you can see the token 
 
 ## 6. Development setup
 
-1. Ensure you have a modern Node.js runtime (>= 18) if you plan to add build tooling.
-2. Install dependencies (build tooling is currently minimal; no package manager files yet).
+1. Ensure you have a modern Node.js runtime (>= 18).
+2. Install dependencies: `npm install`
 3. Modify files in `background.js`, `content.js`, and `src/**` directly.
-4. Reload the extension from `chrome://extensions/` after changes.
+4. Build CSS: `npm run build` (watch mode) or `npm run build:prod` (production)
+5. Reload the extension from `chrome://extensions/` after changes.
 
 ### Code style and conventions
 
@@ -124,6 +147,46 @@ If a variable cannot be resolved, it remains unchanged so you can see the token 
 - Prefix logs with `ContextDock:` for consistent debugging.
 - Keep functions pure where possible; wrap Chrome APIs with promise helpers.
 - Follow the storage schema defined in `src/storage/prompts.js` to avoid runtime errors.
+- Use TailwindCSS component classes from `STYLE_GUIDE.md` for consistent UI.
+
+### UI Development
+
+ContextDock uses TailwindCSS with custom component classes:
+
+- **Config**: `tailwind.config.js` - Custom colors, fonts, and animations
+- **Styles**: `src/css/styles.css` - Component classes and utilities
+- **Built CSS**: `dist/styles.css` - Production-ready styles
+- **Style Guide**: `STYLE_GUIDE.md` - Complete documentation and examples
+- **Demo**: `example.html` - Live preview of all components
+
+Key component classes:
+- `.contextdock-card` - Semi-transparent cards with blur
+- `.contextdock-button--primary` - Blue gradient buttons with glow
+- `.contextdock-input` - Rounded input fields
+- `.contextdock-list-item` - Interactive list rows
+- `.contextdock-modal` - Overlay modals with backdrop blur
+
+### Modal API
+
+The popup includes a reusable modal system:
+
+```javascript
+// Show the create prompt modal
+window.ContextDockModal.show();
+
+// Hide the modal
+window.ContextDockModal.hide();
+
+// Access storage functions
+const prompts = await window.ContextDockModal.getPrompts();
+await window.ContextDockModal.savePrompt(promptData);
+await window.ContextDockModal.deletePrompt(promptId);
+```
+
+For custom modal implementations, access the global functions:
+- `window.showCreateModal()` - Show create modal
+- `window.editPrompt(id)` - Edit existing prompt
+- `window.deletePromptById(id)` - Delete prompt by ID
 
 ### Linting & formatting
 

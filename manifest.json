@@ -32,7 +32,9 @@
       "run_at": "document_idle"
     }
   ],
-  "action": {},
+  "action": {
+    "default_popup": "popup.html"
+  },
   "commands": {
     "trigger-context-dock": {
       "suggested_key": {

@@ -23,6 +23,9 @@ const OPEN_SAVE_MODAL_TYPE = "contextDock.openSaveModal";
 const OPEN_PROMPT_OVERLAY_TYPE = "contextDock.openPromptOverlay";
 const PROMPT_SELECTED_MESSAGE_TYPE = "contextDock.promptSelected";
 const PROMPTS_STORAGE_KEY = "contextDock.prompts";
+const DEBUG_OVERLAY_TOGGLE_KEY = "d";
+const DEBUG_OVERLAY_ID = "contextdock-debug-overlay";
+const DEBUG_OVERLAY_STYLE_ID = "contextdock-debug-overlay-styles";
 
 const SMART_VARIABLES = {
   currentURL: () => window.location.href || "",
@@ -95,10 +98,9 @@ let currentPrompt = "";
 let currentHostConfig = null;
 let domObserver = null;
 let saveModalElements = null;
-let promptOverlay = null;
-let promptsCache = [];
-let filteredPrompts = [];
-let highlightedIndex = -1;
+let debugOverlayElements = null;
+let debugOverlayVisible = false;
+let lastInjectedPrompt = "";
 
 async function handleOpenSaveModal(payload) {
   const selectionText = (payload?.selectionText || SMART_VARIABLES.selectedText()).trim();
@@ -134,18 +136,13 @@ async function handleInjectMessage(payload) {
 
   currentPrompt = "";
 
-  const { prompt, prompts } = payload ?? {};
-
-  if (Array.isArray(prompts) && prompts.length > 1) {
-    openPromptOverlay({
-      prompts,
-      lastUsedId: prompt?.id ?? null,
-    });
-  }
+  const { prompt } = payload ?? {};
 
   if (prompt) {
     currentPrompt = interpolatePrompt(prompt.content);
   }
+
+  updateDebugOverlay();
 
   if (!currentPrompt) {
     return;
@@ -166,9 +163,12 @@ async function init() {
   }
 
   await waitForDocumentReady();
+  initDebugOverlay();
+  updateDebugOverlay();
 
   const savedPrompt = await loadSelectedPrompt();
   currentPrompt = interpolatePrompt(savedPrompt);
+  updateDebugOverlay();
 
   if (!currentPrompt) {
     console.info("ContextDock: no selected prompt found in storage yet.");
@@ -180,22 +180,7 @@ async function init() {
   observeDomForInput();
 }
 
-async function openPromptOverlay(payload = {}) {
-  if (!promptOverlay) {
-    promptOverlay = createPromptOverlay();
-  }
-
-  const providedPrompts = Array.isArray(payload.prompts) ? payload.prompts : null;
-  promptsCache = providedPrompts ?? (await loadStoredPrompts());
-  filteredPrompts = promptsCache.slice();
-
-  const lastUsedId = typeof payload?.lastUsedId === "string" ? payload.lastUsedId : null;
-  const initialIndex = lastUsedId ? filteredPrompts.findIndex((prompt) => prompt.id === lastUsedId) : -1;
-  highlightedIndex = initialIndex >= 0 ? initialIndex : filteredPrompts.length ? 0 : -1;
-
-  showPromptOverlay();
-  renderPromptOverlay();
-}
+let promptPickerController = null;
 
 function createPromptOverlay() {
   injectOverlayStyles();
@@ -640,12 +625,13 @@ function findInputElement() {
   return null;
 }
 
-function applyPromptToInput(input) {
+function applyPromptToInput(input, options = {}) {
+  const { force = false } = options;
   if (!input || typeof input.value === "undefined") {
     return;
   }
 
-  if (input.dataset[CONTEXT_DOCK_FLAG] === currentPrompt) {
+  if (!force && input.dataset[CONTEXT_DOCK_FLAG] === currentPrompt) {
     return;
   }
 
@@ -657,6 +643,9 @@ function applyPromptToInput(input) {
 
   const changeEvent = new Event("change", { bubbles: true });
   input.dispatchEvent(changeEvent);
+
+  lastInjectedPrompt = currentPrompt;
+  updateDebugOverlay();
 }
 
 function observeDomForInput() {
@@ -677,6 +666,245 @@ function observeDomForInput() {
   if (document.body) {
     domObserver.observe(document.body, { childList: true, subtree: true });
   }
+}
+
+function initDebugOverlay() {
+  if (debugOverlayElements || !document.body) {
+    return;
+  }
+
+  injectDebugOverlayStyles();
+
+  const container = document.createElement("section");
+  container.id = DEBUG_OVERLAY_ID;
+  container.className = "contextdock-debug-overlay";
+  container.setAttribute("aria-label", "ContextDock debug overlay");
+
+  const header = document.createElement("div");
+  header.className = "contextdock-debug-overlay__header";
+
+  const title = document.createElement("span");
+  title.className = "contextdock-debug-overlay__title";
+  title.textContent = "ContextDock Debug";
+
+  const site = document.createElement("span");
+  site.className = "contextdock-debug-overlay__site";
+  site.textContent = window.location.hostname;
+
+  header.append(title, site);
+
+  const promptLabel = document.createElement("div");
+  promptLabel.className = "contextdock-debug-overlay__label";
+  promptLabel.textContent = "Last injected prompt";
+
+  const promptPreview = document.createElement("pre");
+  promptPreview.className = "contextdock-debug-overlay__prompt";
+  promptPreview.textContent = "No prompt injected yet";
+
+  const actions = document.createElement("div");
+  actions.className = "contextdock-debug-overlay__actions";
+
+  const clearButton = document.createElement("button");
+  clearButton.type = "button";
+  clearButton.className = "contextdock-debug-overlay__button";
+  clearButton.textContent = "Clear Injection";
+
+  const reinjectButton = document.createElement("button");
+  reinjectButton.type = "button";
+  reinjectButton.className = "contextdock-debug-overlay__button contextdock-debug-overlay__button--primary";
+  reinjectButton.textContent = "Re-Inject";
+
+  clearButton.addEventListener("click", clearInjectedPrompt);
+  reinjectButton.addEventListener("click", reinjectPrompt);
+
+  actions.append(clearButton, reinjectButton);
+  container.append(header, promptLabel, promptPreview, actions);
+
+  document.body.appendChild(container);
+
+  debugOverlayElements = {
+    container,
+    site,
+    promptPreview,
+    reinjectButton,
+  };
+
+  document.addEventListener("keydown", handleDebugOverlayShortcut, { passive: false });
+}
+
+function toggleDebugOverlay(forceVisible) {
+  if (!debugOverlayElements) {
+    return;
+  }
+
+  const nextState = typeof forceVisible === "boolean" ? forceVisible : !debugOverlayVisible;
+  debugOverlayVisible = nextState;
+  debugOverlayElements.container.classList.toggle("contextdock-debug-overlay--visible", nextState);
+}
+
+function handleDebugOverlayShortcut(event) {
+  if (!event.ctrlKey || !event.shiftKey) {
+    return;
+  }
+
+  if ((event.key || "").toLowerCase() !== DEBUG_OVERLAY_TOGGLE_KEY) {
+    return;
+  }
+
+  event.preventDefault();
+  toggleDebugOverlay();
+}
+
+function updateDebugOverlay() {
+  if (!debugOverlayElements) {
+    return;
+  }
+
+  const siteLabel = currentHostConfig?.label || window.location.hostname || "Unknown host";
+  debugOverlayElements.site.textContent = siteLabel;
+
+  debugOverlayElements.promptPreview.textContent = lastInjectedPrompt || "No prompt injected yet";
+  debugOverlayElements.reinjectButton.disabled = !currentPrompt;
+}
+
+function clearInjectedPrompt() {
+  const input = findInputElement();
+  if (!input) {
+    return;
+  }
+
+  input.value = "";
+  delete input.dataset[CONTEXT_DOCK_FLAG];
+
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function reinjectPrompt() {
+  if (!currentPrompt) {
+    return;
+  }
+
+  const input = findInputElement();
+  if (!input) {
+    return;
+  }
+
+  applyPromptToInput(input, { force: true });
+}
+
+function injectDebugOverlayStyles() {
+  if (document.getElementById(DEBUG_OVERLAY_STYLE_ID)) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = DEBUG_OVERLAY_STYLE_ID;
+  style.textContent = `
+    .contextdock-debug-overlay {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      width: 280px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.92);
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
+      z-index: 2147483646;
+      display: none;
+    }
+
+    .contextdock-debug-overlay--visible {
+      display: block;
+    }
+
+    .contextdock-debug-overlay__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .contextdock-debug-overlay__title {
+      font-weight: 600;
+    }
+
+    .contextdock-debug-overlay__site {
+      color: rgba(248, 250, 252, 0.8);
+    }
+
+    .contextdock-debug-overlay__label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      color: rgba(248, 250, 252, 0.65);
+    }
+
+    .contextdock-debug-overlay__prompt {
+      max-height: 120px;
+      overflow: auto;
+      margin: 0 0 10px;
+      padding: 8px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.6);
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+
+    .contextdock-debug-overlay__actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .contextdock-debug-overlay__button {
+      flex: 1;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(248, 250, 252, 0.4);
+      background: transparent;
+      color: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .contextdock-debug-overlay__button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .contextdock-debug-overlay__button--primary {
+      background: rgba(248, 250, 252, 0.15);
+      border-color: rgba(248, 250, 252, 0.6);
+    }
+
+    @media (prefers-color-scheme: light) {
+      .contextdock-debug-overlay {
+        background: rgba(255, 255, 255, 0.94);
+        color: #0f172a;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.15);
+      }
+
+      .contextdock-debug-overlay__prompt {
+        background: rgba(15, 23, 42, 0.06);
+      }
+
+      .contextdock-debug-overlay__button {
+        border-color: rgba(15, 23, 42, 0.2);
+      }
+
+      .contextdock-debug-overlay__button--primary {
+        background: rgba(15, 23, 42, 0.08);
+        border-color: rgba(15, 23, 42, 0.3);
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
 }
 
 function createSaveModalElements() {
@@ -1102,4 +1330,3 @@ function injectSaveModalStyles() {
 
   document.head.appendChild(style);
 }
-
