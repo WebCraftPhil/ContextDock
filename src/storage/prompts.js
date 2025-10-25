@@ -248,18 +248,7 @@ export async function importPrompts(rawPrompts) {
     deduped.push(prompt);
   }
 
-  if (!deduped.length) {
-    if (payload.stats && isPlainObject(payload.stats)) {
-      await mergeStats(payload.stats);
-    }
-
-    return {
-      prompts: existingPrompts,
-      added: [],
-    };
-  }
-
-  const nextPrompts = [...existingPrompts, ...deduped];
+  const nextPrompts = deduped.length ? [...existingPrompts, ...deduped] : existingPrompts;
 
   await writePromptsToStorage(nextPrompts);
 

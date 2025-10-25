@@ -1,4 +1,10 @@
+import { getPrompts, exportPrompts, importPrompts } from './src/storage/prompts.js';
+
 const CONTEXT_MENU_ID = "contextdock-add-selection";
+const OPEN_PROMPT_OVERLAY_TYPE = 'contextDock.openPromptOverlay';
+const PROMPT_SELECTED_TYPE = 'contextDock.promptSelected';
+
+const LAST_USED_PROMPT_KEY = 'contextDock.lastUsedPromptId';
 
 chrome.runtime.onInstalled.addListener(() => {
   setupContextMenus();
@@ -54,12 +60,6 @@ async function setupContextMenus() {
     console.error("ContextDock: failed to register context menu", error);
   }
 }
-import { getPrompts, exportPrompts, importPrompts, recordPromptUsage } from './src/storage/prompts.js';
-
-const OPEN_PROMPT_OVERLAY_TYPE = 'contextDock.openPromptOverlay';
-const PROMPT_SELECTED_TYPE = 'contextDock.promptSelected';
-
-const LAST_USED_PROMPT_KEY = 'contextDock.lastUsedPromptId';
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'trigger-context-dock') {
@@ -95,7 +95,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === PROMPT_SELECTED_TYPE) {
-    handlePromptSelected(message.payload)
+    handlePromptSelected(message.payload, _sender?.tab?.id)
       .then((result) => sendResponse({ ok: true, result }))
       .catch((error) => {
         console.error('ContextDock: Failed to process prompt selection', error);
@@ -196,7 +196,7 @@ function isSupportedUrl(url) {
   return supportedOrigins.some((origin) => url.startsWith(origin));
 }
 
-async function handlePromptSelected(payload = {}) {
+async function handlePromptSelected(payload = {}, senderTabId) {
   const { promptId, tabId } = payload;
 
   if (!promptId || typeof promptId !== 'string') {
@@ -212,16 +212,16 @@ async function handlePromptSelected(payload = {}) {
 
   await setLastUsedPromptId(promptId);
 
-  if (typeof tabId === 'number') {
-    chrome.tabs.sendMessage(tabId, {
+  const targetTabId = typeof tabId === 'number' ? tabId : typeof senderTabId === 'number' ? senderTabId : null;
+
+  if (targetTabId !== null) {
+    chrome.tabs.sendMessage(targetTabId, {
       type: 'contextDock.injectPrompt',
       payload: {
         prompt: selectedPrompt,
         prompts,
       },
     });
-
-    await recordPromptUsage(selectedPrompt.id);
   }
 
   return { promptId };
