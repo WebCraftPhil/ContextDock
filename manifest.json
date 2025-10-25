@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "ContextDock",
+  "version": "0.1.0",
+  "description": "Save reusable prompts and inject them into ChatGPT-like interfaces.",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://perplexity.ai/*",
+    "https://gemini.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://perplexity.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "trigger-context-dock": {
+      "suggested_key": {
+        "default": "Ctrl+K",
+        "mac": "Command+K"
+      },
+      "description": "Insert a saved ContextDock prompt"
+    }
+  }
+}
+
