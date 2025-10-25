@@ -1455,3 +1455,123 @@ function injectSaveModalStyles() {
 
   document.head.appendChild(style);
 }
+
+function createSnippet(content) {
+  if (typeof content !== "string") {
+    return "";
+  }
+
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 180) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 177)}…`;
+}
+
+function highlightTextContent(text, query) {
+  const fragment = document.createDocumentFragment();
+  const term = (query || "").trim();
+
+  if (!text || !term) {
+    fragment.appendChild(document.createTextNode(text || ""));
+    return fragment;
+  }
+
+  const regex = new RegExp(`(${escapeRegExp(term)})`, "ig");
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+
+    const mark = document.createElement("mark");
+    mark.className = "contextdock-highlight";
+    mark.textContent = match[0];
+    fragment.appendChild(mark);
+
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+
+  return fragment;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizePrompts(prompts) {
+  return prompts
+    .filter((prompt) => prompt && typeof prompt.id === "string" && typeof prompt.title === "string" && typeof prompt.content === "string")
+    .map((prompt) => ({
+      id: prompt.id,
+      title: prompt.title.trim() || "Untitled prompt",
+      content: prompt.content,
+    }));
+}
+
+async function ensureTailwindReady() {
+  if (document.documentElement.classList.contains("contextdock-tailwind-ready")) {
+    return;
+  }
+
+  await loadTailwindRuntime();
+  document.documentElement.classList.add("contextdock-tailwind-ready");
+}
+
+function loadTailwindRuntime() {
+  if (window.tailwind?.version) {
+    return Promise.resolve();
+  }
+
+  if (document.getElementById("contextdock-tailwind-cdn")) {
+    return new Promise((resolve, reject) => {
+      const existing = document.getElementById("contextdock-tailwind-cdn");
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.id = "contextdock-tailwind-cdn";
+    script.src = "https://cdn.tailwindcss.com";
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.referrerPolicy = "no-referrer";
+
+    script.addEventListener("load", () => {
+      if (window.tailwind?.config) {
+        tailwind.config = {
+          theme: {
+            extend: {
+              colors: {
+                dock: {
+                  500: "#6366f1",
+                  600: "#4f46e5",
+                  700: "#4338ca",
+                },
+              },
+              fontFamily: {
+                sans: ["Inter", "system-ui", "sans-serif"],
+              },
+            },
+          },
+        };
+      }
+      resolve();
+    });
+
+    script.addEventListener("error", () => {
+      reject(new Error("Failed to load Tailwind runtime"));
+    });
+
+    document.head.appendChild(script);
+  });
+}
