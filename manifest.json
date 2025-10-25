@@ -33,7 +33,6 @@
     }
   ],
   "action": {},
-  "options_page": "options.html",
   "commands": {
     "trigger-context-dock": {
       "suggested_key": {
