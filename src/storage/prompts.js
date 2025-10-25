@@ -154,14 +154,6 @@ export async function clearPrompts() {
   await writePromptsToStorage([]);
 }
 
-export const __testing = {
-  STORAGE_KEY,
-  normalizePrompt,
-  validatePrompt,
-  readPromptsFromStorage,
-  writePromptsToStorage,
-};
-
 export async function exportPrompts() {
   const prompts = await readPromptsFromStorage();
   return JSON.stringify(prompts, null, 2);
@@ -199,6 +191,19 @@ export async function importPrompts(rawPrompts) {
 
   const nextPrompts = [...existingPrompts, ...deduped];
   await writePromptsToStorage(nextPrompts);
-  return nextPrompts;
+  return {
+    prompts: nextPrompts,
+    added: deduped,
+  };
 }
+
+export const __testing = {
+  STORAGE_KEY,
+  normalizePrompt,
+  validatePrompt,
+  readPromptsFromStorage,
+  writePromptsToStorage,
+  exportPrompts,
+  importPrompts,
+};
 

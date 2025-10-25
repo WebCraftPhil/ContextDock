@@ -54,7 +54,7 @@ async function setupContextMenus() {
     console.error("ContextDock: failed to register context menu", error);
   }
 }
-import { getPrompts } from './src/storage/prompts.js';
+import { getPrompts, exportPrompts, importPrompts } from './src/storage/prompts.js';
 
 const LAST_USED_PROMPT_KEY = 'contextDock.lastUsedPromptId';
 
@@ -98,6 +98,34 @@ chrome.commands.onCommand.addListener(async (command) => {
     });
   } catch (error) {
     console.error('ContextDock: Failed to handle keyboard shortcut.', error);
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || !message.type) {
+    return;
+  }
+
+  if (message.type === 'contextDock.exportPrompts') {
+    handleExportPrompts(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => {
+        console.error('ContextDock: Failed to export prompts', error);
+        sendResponse({ ok: false, error: error?.message });
+      });
+
+    return true;
+  }
+
+  if (message.type === 'contextDock.importPrompts') {
+    handleImportPrompts(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => {
+        console.error('ContextDock: Failed to import prompts', error);
+        sendResponse({ ok: false, error: error?.message });
+      });
+
+    return true;
   }
 });
 
@@ -167,5 +195,45 @@ function isSupportedUrl(url) {
   ];
 
   return supportedOrigins.some((origin) => url.startsWith(origin));
+}
+
+async function handleExportPrompts(payload = {}) {
+  const json = await exportPrompts();
+  const filename = payload?.filename || `contextdock-prompts-${Date.now()}.json`;
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    await chrome.downloads.download({
+      url,
+      filename,
+      saveAs: Boolean(payload?.saveAs),
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+
+  return { filename };
+}
+
+async function handleImportPrompts(payload = {}) {
+  const { rawData } = payload;
+
+  if (typeof rawData !== 'string') {
+    throw new TypeError('Import payload must include rawData string.');
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawData);
+  } catch (error) {
+    throw new Error('Invalid JSON supplied for prompt import.');
+  }
+
+  const { prompts, added } = await importPrompts(parsed);
+  return {
+    total: prompts.length,
+    added: added.length,
+  };
 }
 
