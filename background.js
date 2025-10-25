@@ -54,7 +54,10 @@ async function setupContextMenus() {
     console.error("ContextDock: failed to register context menu", error);
   }
 }
-import { getPrompts, exportPrompts, importPrompts } from './src/storage/prompts.js';
+import { getPrompts, exportPrompts, importPrompts, recordPromptUsage } from './src/storage/prompts.js';
+
+const OPEN_PROMPT_OVERLAY_TYPE = 'contextDock.openPromptOverlay';
+const PROMPT_SELECTED_TYPE = 'contextDock.promptSelected';
 
 const LAST_USED_PROMPT_KEY = 'contextDock.lastUsedPromptId';
 
@@ -74,26 +77,11 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
 
     const prompts = await getPrompts();
-    if (!prompts.length) {
-      console.info('ContextDock: No saved prompts to inject.');
-      return;
-    }
-
-    const lastUsedId = await getLastUsedPromptId();
-    const chosenPrompt = resolvePrompt(prompts, lastUsedId);
-
-    if (!chosenPrompt) {
-      console.warn('ContextDock: Unable to find a prompt to inject.');
-      return;
-    }
-
-    await setLastUsedPromptId(chosenPrompt.id);
-
     chrome.tabs.sendMessage(tab.id, {
-      type: 'contextDock.injectPrompt',
+      type: OPEN_PROMPT_OVERLAY_TYPE,
       payload: {
-        prompt: chosenPrompt,
         prompts,
+        lastUsedId: await getLastUsedPromptId(),
       },
     });
   } catch (error) {
@@ -104,6 +92,17 @@ chrome.commands.onCommand.addListener(async (command) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || !message.type) {
     return;
+  }
+
+  if (message.type === PROMPT_SELECTED_TYPE) {
+    handlePromptSelected(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => {
+        console.error('ContextDock: Failed to process prompt selection', error);
+        sendResponse({ ok: false, error: error?.message });
+      });
+
+    return true;
   }
 
   if (message.type === 'contextDock.exportPrompts') {
@@ -195,6 +194,37 @@ function isSupportedUrl(url) {
   ];
 
   return supportedOrigins.some((origin) => url.startsWith(origin));
+}
+
+async function handlePromptSelected(payload = {}) {
+  const { promptId, tabId } = payload;
+
+  if (!promptId || typeof promptId !== 'string') {
+    throw new TypeError('Prompt selection must include promptId string.');
+  }
+
+  const prompts = await getPrompts();
+  const selectedPrompt = prompts.find((prompt) => prompt.id === promptId);
+
+  if (!selectedPrompt) {
+    throw new Error(`Prompt with id ${promptId} not found.`);
+  }
+
+  await setLastUsedPromptId(promptId);
+
+  if (typeof tabId === 'number') {
+    chrome.tabs.sendMessage(tabId, {
+      type: 'contextDock.injectPrompt',
+      payload: {
+        prompt: selectedPrompt,
+        prompts,
+      },
+    });
+
+    await recordPromptUsage(selectedPrompt.id);
+  }
+
+  return { promptId };
 }
 
 async function handleExportPrompts(payload = {}) {

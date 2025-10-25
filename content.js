@@ -20,12 +20,35 @@ const HOST_CONFIG = {
 const CONTEXT_DOCK_FLAG = "contextDockPrompt";
 const INJECT_MESSAGE_TYPE = "contextDock.injectPrompt";
 const OPEN_SAVE_MODAL_TYPE = "contextDock.openSaveModal";
+const PROMPT_SELECTED_MESSAGE_TYPE = "contextDock.promptSelected";
 
 const SMART_VARIABLES = {
-  currentURL: () => window.location.href,
-  currentDate: () => new Date().toISOString(),
+  currentURL: () => window.location.href || "",
+  currentDate: () => new Date().toLocaleDateString(),
   selectedText: () => window.getSelection()?.toString() || "",
 };
+
+export function interpolatePrompt(template) {
+  if (!template || typeof template !== "string") {
+    return template;
+  }
+
+  return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, token) => {
+    const provider = SMART_VARIABLES[token];
+
+    if (!provider) {
+      return match;
+    }
+
+    try {
+      const value = provider();
+      return value == null ? "" : String(value);
+    } catch (error) {
+      console.error(`ContextDock: failed to resolve smart variable {${token}}`, error);
+      return "";
+    }
+  });
+}
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || !message.type) {
@@ -53,12 +76,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     return true;
   }
+
+  if (message.type === "contextDock.openPromptOverlay") {
+    openPromptOverlay(message.payload)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        console.error("ContextDock: failed to open prompt overlay", error);
+        sendResponse({ ok: false, error: error?.message });
+      });
+
+    return true;
+  }
 });
 
 let currentPrompt = "";
 let currentHostConfig = null;
 let domObserver = null;
 let saveModalElements = null;
+let promptOverlay = null;
+let promptsCache = [];
+let highlightedIndex = -1;
 
 async function handleOpenSaveModal(payload) {
   const selectionText = (payload?.selectionText || SMART_VARIABLES.selectedText()).trim();
@@ -101,7 +138,7 @@ async function handleInjectMessage(payload) {
   }
 
   if (prompt) {
-    currentPrompt = resolveSmartVariables(prompt.content);
+    currentPrompt = interpolatePrompt(prompt.content);
   }
 
   if (!currentPrompt) {
@@ -125,7 +162,7 @@ async function init() {
   await waitForDocumentReady();
 
   const savedPrompt = await loadSelectedPrompt();
-  currentPrompt = resolveSmartVariables(savedPrompt);
+  currentPrompt = interpolatePrompt(savedPrompt);
 
   if (!currentPrompt) {
     console.info("ContextDock: no selected prompt found in storage yet.");
@@ -137,31 +174,171 @@ async function init() {
   observeDomForInput();
 }
 
+async function openPromptOverlay(payload = {}) {
+  if (!promptOverlay) {
+    promptOverlay = createPromptOverlay();
+  }
+
+  promptsCache = Array.isArray(payload.prompts) ? payload.prompts : await getStoredPrompts();
+  highlightedIndex = -1;
+
+  updatePromptOverlayList();
+  showPromptOverlay();
+}
+
+function createPromptOverlay() {
+  const container = document.createElement("div");
+  container.className = "contextdock-overlay-picker";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "contextdock-overlay-picker__input";
+  input.placeholder = "Search prompts...";
+
+  const list = document.createElement("ul");
+  list.className = "contextdock-overlay-picker__list";
+
+  container.append(input, list);
+  document.body.appendChild(container);
+
+  input.addEventListener("input", () => updatePromptOverlayList());
+  input.addEventListener("keydown", handlePromptOverlayKeyDown);
+
+  return { container, input, list };
+}
+
+function showPromptOverlay() {
+  if (!promptOverlay) {
+    return;
+  }
+
+  promptOverlay.container.classList.add("contextdock-overlay-picker--visible");
+  promptOverlay.input.value = "";
+  promptOverlay.input.focus();
+  updatePromptOverlayList();
+}
+
+function hidePromptOverlay() {
+  if (!promptOverlay) {
+    return;
+  }
+
+  promptOverlay.container.classList.remove("contextdock-overlay-picker--visible");
+}
+
+function handlePromptOverlayKeyDown(event) {
+  const { key } = event;
+
+  if (key === "Escape") {
+    hidePromptOverlay();
+    return;
+  }
+
+  const visibleItems = Array.from(promptOverlay.list.querySelectorAll("li"));
+
+  if (!visibleItems.length) {
+    return;
+  }
+
+  if (key === "ArrowDown") {
+    event.preventDefault();
+    highlightedIndex = (highlightedIndex + 1) % visibleItems.length;
+    updateHighlight(visibleItems);
+    return;
+  }
+
+  if (key === "ArrowUp") {
+    event.preventDefault();
+    highlightedIndex = (highlightedIndex - 1 + visibleItems.length) % visibleItems.length;
+    updateHighlight(visibleItems);
+    return;
+  }
+
+  if (key === "Enter") {
+    event.preventDefault();
+    const selectedItem = visibleItems[highlightedIndex] || visibleItems[0];
+    if (selectedItem) {
+      handlePromptSelection(selectedItem.dataset.promptId || "");
+    }
+  }
+}
+
+function updateHighlight(items) {
+  items.forEach((item, index) => {
+    if (index === highlightedIndex) {
+      item.classList.add("contextdock-overlay-picker__item--highlighted");
+      item.scrollIntoView({ block: "nearest" });
+    } else {
+      item.classList.remove("contextdock-overlay-picker__item--highlighted");
+    }
+  });
+}
+
+function updatePromptOverlayList() {
+  if (!promptOverlay) {
+    return;
+  }
+
+  const query = promptOverlay.input.value.toLowerCase();
+  const matches = promptsCache.filter((prompt) => {
+    if (!query) {
+      return true;
+    }
+
+    return (
+      prompt.title.toLowerCase().includes(query) ||
+      prompt.content.toLowerCase().includes(query)
+    );
+  });
+
+  promptOverlay.list.innerHTML = "";
+
+  matches.forEach((prompt, index) => {
+    const item = document.createElement("li");
+    item.className = "contextdock-overlay-picker__item";
+    item.dataset.promptId = prompt.id;
+    item.textContent = prompt.title;
+
+    item.addEventListener("mouseenter", () => {
+      highlightedIndex = index;
+      updateHighlight(Array.from(promptOverlay.list.querySelectorAll("li")));
+    });
+
+    item.addEventListener("click", () => handlePromptSelection(prompt.id));
+
+    promptOverlay.list.appendChild(item);
+  });
+
+  highlightedIndex = matches.length ? 0 : -1;
+  updateHighlight(Array.from(promptOverlay.list.querySelectorAll("li")));
+}
+
+async function handlePromptSelection(promptId) {
+  hidePromptOverlay();
+
+  chrome.runtime.sendMessage({
+    type: PROMPT_SELECTED_MESSAGE_TYPE,
+    payload: {
+      promptId,
+      tabId: chrome.devtools ? chrome.devtools.inspectedWindow.tabId : null,
+    },
+  });
+}
+
+function getStoredPrompts() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ contextDockPrompts: [] }, (items) => {
+      resolve(items.contextDockPrompts || []);
+    });
+  });
+}
+
 function resolveHostConfig() {
   const hostname = window.location.hostname;
 
   return Object.entries(HOST_CONFIG).find(([domain]) => hostname === domain || hostname.endsWith(`.${domain}`))?.[1] ?? null;
 }
 
-function resolveSmartVariables(template) {
-  if (!template || typeof template !== "string") {
-    return template;
-  }
-
-  return template.replace(/\{(currentURL|currentDate|selectedText)\}/g, (_match, key) => {
-    const resolver = SMART_VARIABLES[key];
-    if (!resolver) {
-      return _match;
-    }
-
-    try {
-      return resolver() ?? "";
-    } catch (error) {
-      console.error(`ContextDock: failed to resolve smart variable {${key}}`, error);
-      return "";
-    }
-  });
-}
 
 function waitForDocumentReady() {
   if (document.readyState === "complete" || document.readyState === "interactive") {
@@ -187,8 +364,8 @@ function setupStorageListener() {
       return;
     }
 
-  const updatedPrompt = changes.selectedPrompt.newValue || "";
-  currentPrompt = resolveSmartVariables(updatedPrompt);
+    const updatedPrompt = changes.selectedPrompt.newValue || "";
+    currentPrompt = interpolatePrompt(updatedPrompt);
 
     if (!currentPrompt) {
       return;
