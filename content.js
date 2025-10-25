@@ -33,7 +33,7 @@ const SMART_VARIABLES = {
   selectedText: () => window.getSelection()?.toString() || "",
 };
 
-export function interpolatePrompt(template) {
+function interpolatePrompt(template) {
   if (!template || typeof template !== "string") {
     return template;
   }
@@ -182,7 +182,7 @@ async function init() {
 
 let promptPickerController = null;
 
-export async function renderPromptPickerOverlay(options = {}) {
+async function renderPromptPickerOverlay(options = {}) {
   if (promptPickerController) {
     promptPickerController.update(options);
     return promptPickerController;
