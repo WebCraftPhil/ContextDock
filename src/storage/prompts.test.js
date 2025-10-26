@@ -13,7 +13,7 @@ import {
 	__testing,
 } from './prompts.js'
 
-const { STORAGE_KEY, PROMPT_STATS_KEY } = __testing
+// remove unused destructuring from __testing to avoid warnings
 
 describe('prompts storage', () => {
 	beforeEach(async () => {

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Save reusable prompts and inject them into ChatGPT-like interfaces.",
   "main": "background.js",
+  "type": "module",
   "scripts": {
     "build": "tailwindcss -i ./src/css/styles.css -o ./dist/styles.css --watch",
     "build:prod": "tailwindcss -i ./src/css/styles.css -o ./dist/styles.css --minify",
