@@ -7,11 +7,11 @@ const PROMPT_SELECTED_TYPE = 'contextDock.promptSelected';
 const LAST_USED_PROMPT_KEY = 'contextDock.lastUsedPromptId';
 
 chrome.runtime.onInstalled.addListener(() => {
-  setupContextMenus();
+  return setupContextMenus();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  setupContextMenus();
+  return setupContextMenus();
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
