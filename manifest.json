@@ -8,7 +8,9 @@
     "contextMenus",
     "scripting",
     "webNavigation",
-    "downloads"
+    "downloads",
+    "tabs",
+    "activeTab"
   ],
   "host_permissions": [
     "https://chat.openai.com/*",

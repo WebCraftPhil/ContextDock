@@ -7,13 +7,26 @@
     "build": "tailwindcss -i ./src/css/styles.css -o ./dist/styles.css --watch",
     "build:prod": "tailwindcss -i ./src/css/styles.css -o ./dist/styles.css --minify",
     "dev": "npm run build",
-    "lint": "echo 'Linting not configured yet'",
-    "test": "echo 'Testing not configured yet'"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
+    "@eslint/js": "^9.38.0",
     "@tailwindcss/forms": "^0.5.7",
     "@tailwindcss/typography": "^0.5.10",
-    "tailwindcss": "^3.4.0"
+    "@vitest/coverage-v8": "^4.0.3",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-n": "^17.23.1",
+    "eslint-plugin-promise": "^7.2.1",
+    "eslint-plugin-vitest": "^0.5.4",
+    "globals": "^16.4.0",
+    "jsdom": "^27.0.1",
+    "tailwindcss": "^3.4.0",
+    "vitest": "^4.0.3"
   },
   "keywords": [
     "chrome-extension",
