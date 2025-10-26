@@ -1521,8 +1521,14 @@ async function ensureTailwindReady() {
     return;
   }
 
-  await loadTailwindRuntime();
-  document.documentElement.classList.add("contextdock-tailwind-ready");
+  try {
+    await loadTailwindRuntime();
+  } catch (error) {
+    // Fall back gracefully if CSP blocks CDN
+    console.warn("ContextDock: Tailwind runtime failed to load; falling back to base styles.", error);
+  } finally {
+    document.documentElement.classList.add("contextdock-tailwind-ready");
+  }
 }
 
 function loadTailwindRuntime() {
